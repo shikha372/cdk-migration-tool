@@ -5,6 +5,7 @@ import * as fs from "fs/promises";
 // Create MCP server for VPC migration
 const server = new McpServer({
     name: "vpc-migration",
+    description: "Server to assist with migrating AWS CDK VPC constructs from v1 to v2",
     version: "1.0.0",
 });
 // Resource to access CDK code files
@@ -56,7 +57,7 @@ server.resource("cdk-files", new ResourceTemplate("{filePath}", { list: undefine
 //   }
 // );
 // Tool to analyze CDK code for VPC constructs
-server.tool("analyze-vpc", {
+server.tool("analyze-vpc", "Analyzes CDK code to identify VPC constructs and their configurations", {
     filePath: z.string().describe("Absolute Path to the CDK file to analyze")
 }, async ({ filePath }) => {
     try {
@@ -130,7 +131,7 @@ server.tool("analyze-vpc", {
     }
 });
 // Tool to get recommended migration approach for VPC constructs
-server.tool("get-vpc-migration-recommendations", {
+server.tool("get-vpc-migration-recommendations", "Provides recommendations for migrating VPC constructs from CDK v1 to v2", {
     cdkCode: z.string().describe("CDK code snippet containing VPC construct")
 }, async ({ cdkCode }) => {
     // Look for common VPC configuration patterns
@@ -160,7 +161,7 @@ server.tool("get-vpc-migration-recommendations", {
     };
 });
 // Tool to refactor VPC code
-server.tool("refactor-vpc", {
+server.tool("refactor-vpc", "Refactors CDK v1 VPC code to use CDK v2 VPC constructs", {
     cdkCode: z.string().describe("Original CDK code with VPC construct"),
     migrationApproach: z.string().describe("Migration approach to apply")
 }, async ({ cdkCode, migrationApproach }) => {
@@ -192,6 +193,118 @@ server.tool("refactor-vpc", {
         content: [{
                 type: "text",
                 text: refactoredCode
+            }]
+    };
+});
+// Tool to validate VPC migration
+server.tool("validate-vpc-migration", "Validates the correctness of a VPC migration from CDK v1 to v2", {
+    originalCode: z.string().describe("Original CDK code with VPC construct"),
+    migratedCode: z.string().describe("Migrated CDK code with VpcV2 construct")
+}, async ({ originalCode, migratedCode }) => {
+    // Check for common migration issues
+    const validationResults = [];
+    // Check if VpcV2 is being used
+    if (!migratedCode.includes("VpcV2")) {
+        validationResults.push({
+            issue: "Missing VpcV2 construct",
+            severity: "Error",
+            recommendation: "Replace Vpc with VpcV2 from @aws-cdk/aws-ec2-alpha"
+        });
+    }
+    // Check for proper IP addressing
+    if (originalCode.includes("cidrMask") && !migratedCode.includes("primaryAddressBlock")) {
+        validationResults.push({
+            issue: "IP addressing not properly migrated",
+            severity: "Error",
+            recommendation: "Use primaryAddressBlock: IpAddresses.ipv4() instead of cidrMask"
+        });
+    }
+    // Check for subnet migration
+    if (originalCode.includes("subnetConfiguration") && !migratedCode.includes("SubnetV2")) {
+        validationResults.push({
+            issue: "Subnet configuration not properly migrated",
+            severity: "Warning",
+            recommendation: "Use SubnetV2 constructs instead of subnetConfiguration array"
+        });
+    }
+    // Check for NAT gateway configuration
+    if (originalCode.includes("natGateways") && !migratedCode.includes("addNatGateway")) {
+        validationResults.push({
+            issue: "NAT gateway configuration not properly migrated",
+            severity: "Warning",
+            recommendation: "Use vpc.addNatGateway() method instead of natGateways property"
+        });
+    }
+    // Overall validation status
+    const status = validationResults.length === 0 ? "PASS" : "FAIL";
+    return {
+        content: [{
+                type: "text",
+                text: JSON.stringify({
+                    status,
+                    issues: validationResults,
+                    recommendations: validationResults.length === 0 ?
+                        ["Migration successful! Test your infrastructure code to ensure it works as expected."] :
+                        validationResults.map(r => r.recommendation)
+                }, null, 2)
+            }]
+    };
+});
+// Tool to generate migration documentation
+server.tool("generate-migration-docs", "Generates documentation for a VPC migration from CDK v1 to v2", {
+    originalCode: z.string().describe("Original CDK code with VPC construct"),
+    migratedCode: z.string().describe("Migrated CDK code with VpcV2 construct")
+}, async ({ originalCode, migratedCode }) => {
+    // Extract key changes between original and migrated code
+    const changes = [];
+    if (originalCode.includes("Vpc") && migratedCode.includes("VpcV2")) {
+        changes.push("Upgraded from Vpc to VpcV2 construct");
+    }
+    if (originalCode.includes("cidrMask") && migratedCode.includes("primaryAddressBlock")) {
+        changes.push("Migrated CIDR configuration to use primaryAddressBlock");
+    }
+    if (originalCode.includes("subnetConfiguration") && migratedCode.includes("SubnetV2")) {
+        changes.push("Replaced subnetConfiguration array with explicit SubnetV2 constructs");
+    }
+    if (originalCode.includes("natGateways") && migratedCode.includes("addNatGateway")) {
+        changes.push("Replaced natGateways property with addNatGateway() method calls");
+    }
+    // Generate markdown documentation
+    const documentation = `
+# VPC Migration Documentation
+
+## Changes Applied
+
+${changes.map(change => `- ${change}`).join('\n')}
+
+## Migration Details
+
+### Original Code
+\`\`\`typescript
+${originalCode}
+\`\`\`
+
+### Migrated Code
+\`\`\`typescript
+${migratedCode}
+\`\`\`
+
+## Testing Recommendations
+
+1. Deploy the migrated infrastructure to a test environment
+2. Verify network connectivity between subnets
+3. Validate that internet connectivity works as expected
+4. Check that any resources depending on the VPC can still connect properly
+
+## References
+
+- [AWS CDK VpcV2 API Reference](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.aws_ec2.Vpc.html)
+- [AWS CDK Migration Guide](https://docs.aws.amazon.com/cdk/v2/guide/migrating-v2.html)
+`;
+    return {
+        content: [{
+                type: "text",
+                text: documentation
             }]
     };
 });
