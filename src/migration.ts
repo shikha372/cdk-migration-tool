@@ -95,44 +95,89 @@ server.tool(
       const content = await fs.readFile(filePathStr, "utf8");
       console.error(`File content length: ${content.length} bytes`);
       
-      // Simple regex pattern to detect VPC constructs
-      const vpcPattern = /new\s+(?:ec2\.)?Vpc\s*\(/g;
-      const vpcMatches = content.match(vpcPattern) || [];
+      // Create a prompt for AI analysis
+      const analysisPrompt = `
+      You are an expert AWS CDK code analyzer. Analyze the following TypeScript/JavaScript code and identify all VPC-related constructs and configurations.
       
-      // Count VPC occurrences
-      const vpcCount = vpcMatches.length;
-      console.error(`Found ${vpcCount} VPC constructs`);
+      Focus on:
+      1. VPC constructs (new ec2.Vpc or new Vpc)
+      2. VPC imports (Vpc.fromVpcAttributes, Vpc.fromLookup)
+      3. Subnet configurations (subnetConfiguration property)
+      4. NAT Gateway configurations (natGateways property)
+      5. CIDR block configurations (cidr or cidrMask properties)
+      6. Availability Zone configurations (maxAzs property)
+      7. VPN Gateway configurations (enableVpnGateway method)
+      8. VPC Endpoint configurations (addGatewayEndpoint, addInterfaceEndpoint methods)
       
-      // Extract VPC configuration
-      let vpcConfig = null;
-      if (vpcCount > 0) {
-        // Attempt to extract the VPC configuration
-        try {
-          const fullVpcPattern = /new\s+(?:ec2\.)?Vpc\s*\([^{]*({\s*[\s\S]*?}\s*)\)/;
-          const configMatch = content.match(fullVpcPattern);
-          if (configMatch && configMatch[1]) {
-            vpcConfig = configMatch[1].trim();
-            console.error(`Extracted VPC config: ${vpcConfig.substring(0, 50)}...`);
+      For each VPC construct found, extract:
+      - The construct ID/name
+      - The complete configuration object
+      - Line number or approximate position in the code
+      
+      Analyze the complexity of migration to VPC V2:
+      - Simple: Basic VPC with minimal configuration
+      - Moderate: VPC with multiple subnet types or moderate complexity
+      - Complex: VPC with VPN gateways or many VPC endpoints
+      
+      Format your response as a JSON object with the following structure:
+      {
+        "vpcConstructs": number of VPC constructs found,
+        "vpcImports": number of VPC imports found,
+        "totalVpcReferences": total number of VPC references,
+        "components": {
+          "subnetConfigurations": count,
+          "natGateways": count,
+          "cidrBlocks": count,
+          "maxAzs": count,
+          "vpnGateways": count,
+          "vpcEndpoints": count
+        },
+        "vpcConfigs": [
+          {
+            "constructId": "name of the construct",
+            "configBlock": "complete configuration object as string",
+            "position": approximate position in the code
           }
-        } catch (extractErr) {
-          console.error(`Error extracting VPC config: ${extractErr}`);
-        }
+        ],
+        "subnetAnalysis": [
+          {
+            "types": ["PUBLIC", "PRIVATE_WITH_NAT", etc.],
+            "count": number of subnet configurations
+          }
+        ],
+        "migrationComplexity": "Simple|Moderate|Complex",
+        "migrationReady": boolean indicating if migration is possible
       }
       
-      const result = {
+      Here's the code to analyze:
+      
+      ${content}
+      `;
+      
+      console.error(`Generated AI analysis prompt with length: ${analysisPrompt.length}`);
+      
+      // In a real implementation, this would call an AI service
+      // For now, we'll return a placeholder result with the prompt
+      
+      // This is a placeholder for the actual AI service call
+      // In a real implementation, you would send the prompt to an AI service
+      // and process the response
+      
+      // Placeholder result - in a real implementation, this would come from the AI service
+      const placeholderResult = {
         file: filePathStr,
-        vpcConstructs: vpcCount,
-        matches: vpcMatches,
-        config: vpcConfig,
-        migrationReady: vpcCount > 0
+        analysisMethod: "AI-based analysis",
+        prompt: analysisPrompt.substring(0, 500) + "...", // Include part of the prompt for reference
+        migrationGuide: "/Users/shikagg/migration_mcp/vpc-migration-guide.md",
+        note: "This is a placeholder. In a real implementation, this would be replaced with the AI service response."
       };
       
-      console.error(`Analysis complete: ${JSON.stringify(result)}`);
+      console.error(`Analysis complete: Prompt generated and ready for AI service`);
       
       return {
         content: [{ 
           type: "text", 
-          text: JSON.stringify(result, null, 2)
+          text: JSON.stringify(placeholderResult, null, 2)
         }]
       };
     } catch (error) {
@@ -196,52 +241,89 @@ server.tool(
       migrationApproach: z.string().describe("Migration approach to apply")
     },
   async ({ cdkCode, migrationApproach }) => {
-    let refactoredCode = cdkCode;
-    
-    // Apply different refactoring strategies based on the migration approach
-    if (migrationApproach.includes("Subnet")) {
-      // Example subnet refactoring
-      refactoredCode = refactoredCode.replace(
-        /subnetConfiguration:\s*\[([^\]]+)\]/g,
-        "new SubnetV2([$1])"
-      );
+    try {
+      // Read the migration guide for reference
+      let migrationGuideContent = "";
+      try {
+        migrationGuideContent = await fs.readFile("/Users/shikagg/migration_mcp/vpc-migration-guide.md", "utf8");
+        console.error("Migration guide loaded successfully");
+      } catch (guideErr) {
+        console.error(`Error loading migration guide: ${guideErr}`);
+        migrationGuideContent = "Migration guide not available";
+      }
+      
+      // Create a prompt for AI-based refactoring
+      const refactorPrompt = `
+      You are an expert AWS CDK developer specializing in migrating VPC constructs from CDK v1 to CDK v2.
+      
+      Your task is to refactor the following CDK v1 code to use the new VPC v2 constructs.
+      
+      Migration approach to apply: ${migrationApproach}
+      
+      Here's the original code:
+      
+      \`\`\`typescript
+      ${cdkCode}
+      \`\`\`
+      
+      Here's the migration guide for reference:
+      
+      ${migrationGuideContent}
+      
+      Key migration rules:
+      1. Replace 'new ec2.Vpc' with 'new VpcV2'
+      2. Replace 'cidr' property with 'primaryAddressBlock: IpAddresses.ipv4()'
+      3. Replace 'subnetConfiguration' array with explicit SubnetV2 constructs
+      4. Replace 'natGateways' property with vpc.addNatGateway() method calls
+      5. Add explicit route tables and associate them with subnets
+      6. Add explicit internet gateway with vpc.addInternetGateway() for public subnets
+      7. Update import statements to include VpcV2, SubnetV2, IpAddresses, etc. from '@aws-cdk/aws-ec2-alpha'
+      8. Maintain the same logical structure and functionality as the original code
+      
+      Please provide the complete refactored code, including all necessary import statements and maintaining the same variable names and structure where possible.
+      
+      Return ONLY the refactored code without explanations or comments about the changes.
+      `;
+      
+      console.error(`Generated AI refactoring prompt with length: ${refactorPrompt.length}`);
+      
+      // In a real implementation, this would call an AI service
+      // For now, we'll return a placeholder result
+      
+      // This is a placeholder for the actual AI service call
+      // In a real implementation, you would send the prompt to an AI service
+      // and return the refactored code from the response
+      
+      // For demonstration purposes, we'll return a simple transformation
+      // that shows the structure of what the AI would return
+      let placeholderRefactoredCode = cdkCode;
+      
+      // Add import statements
+      if (!placeholderRefactoredCode.includes('@aws-cdk/aws-ec2-alpha')) {
+        placeholderRefactoredCode = `import { VpcV2, SubnetV2, IpAddresses, IpCidr, RouteTable } from '@aws-cdk/aws-ec2-alpha';\n\n${placeholderRefactoredCode}`;
+      }
+      
+      // Add placeholder comment to indicate this is a placeholder
+      placeholderRefactoredCode = `// This is a placeholder for the AI-refactored code\n// In a real implementation, this would be replaced with the AI service response\n\n${placeholderRefactoredCode}`;
+      
+      console.error(`Refactoring complete: Prompt generated and ready for AI service`);
+      
+      return {
+        content: [{ 
+          type: "text", 
+          text: placeholderRefactoredCode
+        }]
+      };
+    } catch (error) {
+      console.error(`Error refactoring code: ${error instanceof Error ? error.message : String(error)}`);
+      return {
+        content: [{ 
+          type: "text", 
+          text: `Error refactoring code: ${error instanceof Error ? error.message : String(error)}` 
+        }],
+        isError: true
+      };
     }
-    
-    if (migrationApproach.includes("cidr")) {
-      // Example IP addressing refactoring
-      refactoredCode = refactoredCode.replace(
-        "ipAddresses: IpAddresses.cidr('$1')",
-        "primaryAddressBlock:  IpAddresses.ipv4('$1')"
-      );
-    }
-
-    if (migrationApproach.includes("IPAM")) {
-        refactoredCode = refactoredCode.replace(
-            "ipAddresses: IpAddresses.awsIpamAllocation('$1')",
-            "primaryAddressBlock: Ip4Addresses.ipv4Ipam('$1')"
-          );
-    }
-    
-    // Add import statements for new constructs if not already present
-    const requiredImports = [
-      "import { VpcV2, SubnetV2, IpAddresses } from '@aws-cdk/aws-ec2-alpha';"
-    ];
-    
-    const importSection = requiredImports.join('\n');
-    
-    // Add imports if not already present
-    if (!refactoredCode.includes("SubnetConfiguration") || 
-        !refactoredCode.includes("IpAddresses") || 
-        !refactoredCode.includes("Ipam")) {
-      refactoredCode = importSection + '\n\n' + refactoredCode;
-    }
-    
-    return {
-      content: [{ 
-        type: "text", 
-        text: refactoredCode
-      }]
-    };
   }
 );
 
